@@ -76,6 +76,11 @@ intents.message_content = True  # Dibutuhkan untuk prefix command (!)
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Throttle voice (re)connection attempts: the watchdog and the voice-state handler
+# must never fire a connect/disconnect in the same window.
+_last_voice_attempt = 0.0
+VOICE_ATTEMPT_COOLDOWN = 8.0
+
 
 def resolve_guild(ctx: commands.Context) -> Optional[discord.Guild]:
     """
@@ -140,6 +145,12 @@ def get_author_voice_channel(ctx: commands.Context, guild: discord.Guild) -> Opt
 
 async def ensure_voice_connection():
     """Memastikan bot terhubung ke voice channel target."""
+    global _last_voice_attempt
+    now = asyncio.get_running_loop().time()
+    if now - _last_voice_attempt < VOICE_ATTEMPT_COOLDOWN:
+        return
+    _last_voice_attempt = now
+
     target_id = get_target_channel_id()
     if not target_id:
         return
