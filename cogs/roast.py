@@ -103,6 +103,53 @@ class Roast(commands.Cog):
 
         return None
 
+    async def fetch_groq_roast(self, author_name: str, user_prompt: str, target_name: Optional[str] = None) -> Optional[str]:
+        """Menghubungi Groq API (Llama 3.3 70B) sebagai fallback AI super cepat."""
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            return None
+
+        model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        url = "https://api.groq.com/openai/v1/chat/completions"
+
+        target_context = f"Orang yang di-roast: '{target_name}'" if target_name else f"Orang yang di-roast: '{author_name}'"
+        user_message = f"{target_context}\nPesan dari {author_name}: \"{user_prompt}\"\n\nBeri roastingan pedas khas Morvath!"
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 1.0,
+            "max_tokens": 200,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            session = await self.get_session()
+            timeout = aiohttp.ClientTimeout(total=8)
+            async with session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        content = choices[0].get("message", {}).get("content", "")
+                        if content:
+                            logger.info("⚡ Roasting berhasil dihasilkan melalui Groq (Llama 3.3)!")
+                            return content.strip()
+                else:
+                    err_body = await resp.text()
+                    logger.warning(f"Groq API error (status {resp.status}): {err_body[:200]}")
+        except Exception as e:
+            logger.error(f"Error saat menghubungi Groq API: {e}")
+
+        return None
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Mendeteksi saat Morvath di-tag / di-mention di chat."""
@@ -123,13 +170,23 @@ class Roast(commands.Cog):
         # Beri efek sedang mengetik (Morvath sedang menyiapkan kalimat pedas)
         async with message.channel.typing():
             await asyncio.sleep(0.8)  # Natural typing delay
+
+            # 1. Coba Google Gemini terlebih dahulu
             roast_text = await self.fetch_gemini_roast(
                 author_name=message.author.display_name,
                 user_prompt=clean_text if clean_text else "(Hanya nge-tag bot tanpa mengetik pesan apa pun)",
                 target_name=target_name,
             )
 
-            # Jika API key belum ada atau ada kendala koneksi, gunakan fallback ksatria
+            # 2. Fallback ke Groq (Llama 3.3 70B) jika Gemini gagal / kena limit
+            if not roast_text:
+                roast_text = await self.fetch_groq_roast(
+                    author_name=message.author.display_name,
+                    user_prompt=clean_text if clean_text else "(Hanya nge-tag bot tanpa mengetik pesan apa pun)",
+                    target_name=target_name,
+                )
+
+            # 3. Jalur darurat terakhir jika kedua AI offline / tidak ada koneksi
             if not roast_text:
                 if target_name:
                     roast_text = f"Wahai **{target_name}**, {random.choice(BACKUP_ROASTS).lower()}"
