@@ -62,8 +62,9 @@ class Roast(commands.Cog):
         if not api_key:
             return None
 
-        # Menggunakan model Gemini Flash yang cepat dan hemat kuota
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        # Menggunakan model Gemini Flash terbaru
+        model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
         target_context = f"Orang yang di-roast: '{target_name}'" if target_name else f"Orang yang di-roast: '{author_name}'"
         prompt_content = f"{target_context}\nPesan dari {author_name}: \"{user_prompt}\"\n\nBeri roastingan pedas khas Morvath!"
